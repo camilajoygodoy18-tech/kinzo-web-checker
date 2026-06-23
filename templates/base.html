@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KINZO WEB CHECKER</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">KINZO WEB CHECKER</div>
+            <nav>
+                {% if session.user_id %}
+                    <span>Welcome, {{ session.username }}</span>
+                    {% if session.is_admin %}<a href="{{ url_for('admin_panel') }}">Admin</a>{% endif %}
+                    <a href="{{ url_for('logout') }}">Logout</a>
+                {% endif %}
+            </nav>
+        </header>
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>

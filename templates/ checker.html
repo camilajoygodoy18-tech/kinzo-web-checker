@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="checker">
+    <div class="settings">
+        <h3>Account Format</h3>
+        <p><code>email:password</code> (one per line)</p>
+        <form id="checkForm" enctype="multipart/form-data">
+            <div>
+                <label>Upload accounts file:</label>
+                <input type="file" name="file" accept=".txt">
+                <br><small>or paste below</small>
+                <textarea name="accounts" rows="6" placeholder="email1:pass1&#10;email2:pass2"></textarea>
+            </div>
+            <div>
+                <label>Proxy file (optional):</label>
+                <input type="file" name="proxy_file" accept=".txt">
+                <p><small>Format: ip:port (one per line)</small></p>
+            </div>
+            <div>
+                <label>Captcha Token:</label>
+                <select name="captcha_mode">
+                    <option value="auto">Auto (server)</option>
+                    <option value="file">File</option>
+                    <option value="api">API</option>
+                    <option value="capm">CapM</option>
+                </select>
+                <p><small>Currently only 'Auto' is supported (recaptcha-token=test)</small></p>
+            </div>
+            <button type="submit">Start Check</button>
+        </form>
+    </div>
+
+    <div class="stats">
+        <h3>Session Stats</h3>
+        <div id="stats">
+            <div><span class="label">Working</span> <span id="success">0</span> <button onclick="downloadResult('success')">Download</button></div>
+            <div><span class="label">Invalid</span> <span id="invalid">0</span> <button onclick="downloadResult('invalid')">Download</button></div>
+            <div><span class="label">Banned</span> <span id="failed">0</span> <button onclick="downloadResult('failed')">Download</button></div>
+            <div><span class="label">Retried / Warn</span> <span id="errors">0</span> <button onclick="downloadResult('errors')">Download</button></div>
+        </div>
+        <div id="progress">Ready</div>
+        <div id="task_id" style="display:none;"></div>
+    </div>
+</div>
+
+<script>
+    let currentTaskId = null;
+    let eventSource = null;
+
+    document.getElementById('checkForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = new FormData(e.target);
+        const resp = await fetch('/api/start_check', { method: 'POST', body: form });
+        const data = await resp.json();
+        if (data.error) {
+            alert(data.error);
+            return;
+        }
+        currentTaskId = data.task_id;
+        document.getElementById('task_id').textContent = currentTaskId;
+        document.getElementById('progress').textContent = 'Running...';
+        // Reset stats
+        document.getElementById('success').textContent = '0';
+        document.getElementById('invalid').textContent = '0';
+        document.getElementById('failed').textContent = '0';
+        document.getElementById('errors').textContent = '0';
+
+        // Start SSE
+        if (eventSource) eventSource.close();
+        eventSource = new EventSource(`/api/stream/${currentTaskId}`);
+        eventSource.onmessage = (ev) => {
+            const stats = JSON.parse(ev.data);
+            document.getElementById('success').textContent = stats.success || 0;
+            document.getElementById('invalid').textContent = stats.invalid || 0;
+            document.getElementById('failed').textContent = stats.failed || 0;
+            document.getElementById('errors').textContent = stats.errors || 0;
+        };
+        eventSource.onerror = () => {
+            eventSource.close();
+            document.getElementById('progress').textContent = 'Completed or error.';
+        };
+        // Poll status to detect completion
+        const checkDone = setInterval(async () => {
+            const resp = await fetch(`/api/task_status/${currentTaskId}`);
+            const status = await resp.json();
+            if (status.status === 'completed' || status.status === 'error') {
+                clearInterval(checkDone);
+                document.getElementById('progress').textContent = status.status === 'completed' ? 'Done' : 'Error';
+                if (eventSource) eventSource.close();
+            }
+        }, 2000);
+    });
+
+    function downloadResult(type) {
+        if (!currentTaskId) return;
+        window.location.href = `/api/download/${currentTaskId}/${type}`;
+    }
+</script>
+{% endblock %}
